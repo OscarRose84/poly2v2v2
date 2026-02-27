@@ -3,57 +3,134 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Polytopia Token Generator (Player Only)</title>
+  <title>Polytopia Token Generator</title>
+
+  <!-- Optional: add icon.png to your repo root to use as a favicon -->
+  <link rel="icon" href="icon.png"/>
+
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:20px;max-width:900px}
-    .card{border:1px solid #ddd;border-radius:14px;padding:14px;margin:14px 0}
-    input,button,textarea{font-size:16px;padding:10px;margin:6px 0;width:100%;box-sizing:border-box}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .small{color:#555;font-size:14px;line-height:1.35}
+    :root{
+      --card-border:#e6e6e6;
+      --text:#111;
+      --muted:#555;
+      --bg:#fafafa;
+    }
+    body{
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+    }
+    .wrap{
+      max-width:900px;
+      margin:0 auto;
+      padding:18px;
+    }
+    .hero{
+      border:1px solid var(--card-border);
+      border-radius:18px;
+      overflow:hidden;
+      background:white;
+      box-shadow:0 6px 24px rgba(0,0,0,0.06);
+      margin-bottom:14px;
+    }
+    .hero img{
+      width:100%;
+      display:block;
+      height:auto;
+    }
+    .hero .heroText{
+      padding:14px 16px;
+    }
+    h1{margin:0 0 6px 0; font-size:28px;}
+    .small{color:var(--muted); font-size:14px; line-height:1.4; margin:0;}
+    .card{
+      border:1px solid var(--card-border);
+      border-radius:18px;
+      padding:16px;
+      margin:14px 0;
+      background:white;
+      box-shadow:0 6px 24px rgba(0,0,0,0.06);
+    }
+    h2{margin:0 0 10px 0; font-size:18px;}
+    input,button,textarea{
+      font-size:16px;
+      padding:12px;
+      margin:7px 0;
+      width:100%;
+      box-sizing:border-box;
+      border-radius:12px;
+      border:1px solid #d6d6d6;
+      background:white;
+    }
+    button{
+      border:none;
+      cursor:pointer;
+      font-weight:600;
+      background:#111;
+      color:white;
+    }
+    button:active{transform:translateY(1px);}
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+    .status{margin-top:6px;}
+    .footer{
+      color:var(--muted);
+      font-size:13px;
+      margin:18px 0 6px;
+      text-align:center;
+    }
+    code{background:#f1f1f1; padding:2px 6px; border-radius:8px;}
   </style>
 </head>
 <body>
-  <h1>Polytopia Token Generator</h1>
-  <p class="small">
-    Generate your token from your coordinates. When you click the button, it will copy the token and open an email draft to send it to the organiser.
-  </p>
+  <div class="wrap">
 
-  <div class="card">
-    <h2>Shared settings (must match organiser)</h2>
-    <input id="room" value="polytopia-room" placeholder="Room Code (change each match)"/>
-    <div class="row">
-      <input id="w" type="number" value="100" min="1" step="1" placeholder="Grid width (e.g. 100)"/>
-      <input id="h" type="number" value="100" min="1" step="1" placeholder="Grid height (e.g. 100)"/>
+    <div class="hero">
+      <!-- ✅ Put your custom image in the repo root named banner.png -->
+      <img src="banner.png" alt="Banner"/>
+      <div class="heroText">
+        <h1>Polytopia Token Generator</h1>
+        <p class="small">
+          Enter your spawn coordinates, generate a token, and it will open a pre-filled email to send it to the organiser.
+        </p>
+      </div>
     </div>
-    <p class="small">
-      Everyone must use the same Room Code and W/H as the organiser page.
-    </p>
-  </div>
 
-  <div class="card">
-    <h2>Generate & send your token</h2>
-    <input id="name" placeholder="Your name"/>
-    <div class="row">
-      <input id="x" type="number" step="1" placeholder="Spawn X"/>
-      <input id="y" type="number" step="1" placeholder="Spawn Y"/>
+    <div class="card">
+      <h2>Shared settings (must match organiser)</h2>
+      <input id="room" value="polytopia-room" placeholder="Room Code (change each match)"/>
+      <div class="row">
+        <input id="w" type="number" value="100" min="1" step="1" placeholder="Grid width (e.g. 100)"/>
+        <input id="h" type="number" value="100" min="1" step="1" placeholder="Grid height (e.g. 100)"/>
+      </div>
+      <p class="small">
+        Everyone must use the same Room Code and W/H as the organiser page.
+      </p>
     </div>
-    <button id="genSend">Generate token & open email</button>
-    <textarea id="token" rows="2" readonly placeholder="Your token will appear here..."></textarea>
-    <p class="small" id="status"></p>
+
+    <div class="card">
+      <h2>Generate & send your token</h2>
+      <input id="name" placeholder="Your name"/>
+      <div class="row">
+        <input id="x" type="number" step="1" placeholder="Spawn X"/>
+        <input id="y" type="number" step="1" placeholder="Spawn Y"/>
+      </div>
+      <button id="genSend">Generate token & open email</button>
+      <textarea id="token" rows="2" readonly placeholder="Your token will appear here..."></textarea>
+      <p class="small status" id="status"></p>
+    </div>
+
+    <div class="footer">
+      Tip: If the page doesn’t update, try a hard refresh (<code>⌘⇧R</code>) or Private Window.
+    </div>
+
   </div>
 
 <script>
-/*
-  Token design (unchanged):
-  - Deterministic anchors from Room Code
-  - fp[i] = squared distance to anchor_i
-  - Output: Name|fp:...
-*/
-
+/* Token logic (unchanged) */
 const K = 8;
 const ORGANISER_EMAIL = "oseo@tcd.ie";
 
-// --- deterministic RNG from a string ---
 function sha256Hex(str){
   const enc = new TextEncoder().encode(str);
   return crypto.subtle.digest("SHA-256", enc).then(buf => {
@@ -77,7 +154,7 @@ function xorshift64star(seed){
 
 async function anchorsFromRoom(room){
   const hex = await sha256Hex("anchors:" + room);
-  const seed = hexToBigInt(hex.slice(0,16)); // 64-bit
+  const seed = hexToBigInt(hex.slice(0,16));
   const rand = xorshift64star(seed);
   const A = [];
   for(let i=0;i<K;i++) A.push([rand(), rand()]);
@@ -97,13 +174,8 @@ async function makeToken(room, name, x, y, w, h){
 }
 
 async function copyToClipboard(text){
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (e) {
-    // fallback: select the textarea (user can copy manually)
-    return false;
-  }
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch { return false; }
 }
 
 function openEmailDraft(room, w, h, token){
@@ -119,7 +191,6 @@ ${token}
   window.location.href = `mailto:${ORGANISER_EMAIL}?subject=${subject}&body=${body}`;
 }
 
-// --- UI wiring ---
 const roomEl=document.getElementById("room");
 const wEl=document.getElementById("w");
 const hEl=document.getElementById("h");
@@ -146,8 +217,8 @@ document.getElementById("genSend").addEventListener("click", async ()=>{
 
   const copied = await copyToClipboard(tok);
   statusEl.textContent = copied
-    ? "Token copied to clipboard. Opening email draft…"
-    : "Couldn’t auto-copy (browser permissions). Token is shown—copy it manually. Opening email draft…";
+    ? "Token copied. Opening email draft…"
+    : "Couldn’t auto-copy (browser permissions). Copy the token manually. Opening email draft…";
 
   openEmailDraft(room, w, h, tok);
 });
