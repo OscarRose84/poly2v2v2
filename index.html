@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Polytopia 2v2v2 Team Picker (Fair + No coord reveal)</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:20px;max-width:900px}
+    .card{border:1px solid #ddd;border-radius:14px;padding:14px;margin:14px 0}
+    input,button,textarea{font-size:16px;padding:10px;margin:6px 0;width:100%;box-sizing:border-box}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .small{color:#555;font-size:14px;line-height:1.35}
+    .pill{display:inline-block;border:1px solid #ccc;border-radius:999px;padding:4px 10px;margin:4px 6px 0 0}
+  </style>
+</head>
+<body>
+  <h1>Polytopia 2v2v2 Team Picker</h1>
+  <p class="small">
+    Players generate a “token” from their coordinates. The token is not plain text coordinates.
+    Organiser pastes 6 tokens to compute 3 teams of 2, prioritising fairness so no team gets a disaster pairing at spawn.
+  </p>
+
+  <div class="card">
+    <h2>Shared settings (everyone must match)</h2>
+    <input id="room" value="polytopia-room" placeholder="Room Code (change each match)"/>
+    <div class="row">
+      <input id="w" type="number" value="40" min="1" step="1" placeholder="Grid width (e.g. 40)"/>
+      <input id="h" type="number" value="40" min="1" step="1" placeholder="Grid height (e.g. 40)"/>
+    </div>
+    <p class="small">
+      Coordinates can be an estimate from a screenshot grid. Just be consistent.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Player: generate your token</h2>
+    <input id="name" placeholder="Your name"/>
+    <div class="row">
+      <input id="x" type="number" step="1" placeholder="Spawn X"/>
+      <input id="y" type="number" step="1" placeholder="Spawn Y"/>
+    </div>
+    <button id="gen">Generate token</button>
+    <textarea id="token" rows="2" readonly placeholder="Your token will appear here..."></textarea>
+    <p class="small">Send ONLY the token to the organiser.</p>
+  </div>
+
+  <div class="card">
+    <h2>Organiser: paste 6 tokens</h2>
+    <textarea id="all" rows="10" placeholder="Paste 6 tokens here, one per line"></textarea>
+    <button id="compute">Compute 2v2v2 teams (fair)</button>
+    <div id="out"></div>
+  </div>
+
+<script>
+/*
+  Token design:
+  - Deterministic anchors from Room Code
+  - fp[i] = squared distance to anchor_i
+  - Output: Name|fp:...
+*/
+
+const K = 8;
+
+// --- deterministic RNG from a string ---
+function sha256Hex(str){
+  const enc = new TextEncoder().encode(str);
+  return crypto.subtle.digest("SHA-256", enc).then(buf => {
+    const b = new Uint8Array(buf);
+    return [...b].map(x => x.toString(16).padStart(2,"0")).join("");
+  });
+}
+function hexToBigInt(hex){ return BigInt("0x" + hex); }
+
+function xorshift64star(seed){
+  let x = seed & ((1n<<64n)-1n);
+  return () => {
+    x ^= (x >> 12n) & ((1n<<64n)-1n);
+    x ^= (x << 25n) & ((1n<<64n)-1n);
+    x ^= (x >> 27n) & ((1n<<64n)-1n);
+    x = (x * 2685821657736338717n) & ((1n<<64n)-1n);
+    const mant = Number(x & ((1n<<53n)-1n));
+    return mant / (2**53);
+  };
+}
+
+async function anchorsFromRoom(room){
+  const hex = await sha256Hex("anchors:" + room);
+  const seed = hexToBigInt(hex.slice(0,16)); // 64-bit
+  const rand = xorshift64star(seed);
+  const A = [];
+  for(let i=0;i<K;i++) A.push([rand(), rand()]);
+  return A;
+}
+
+function round6(n){ return Math.round(n*1e6)/1e6; }
+
+async function makeToken(room, name, x, y, w, h){
+  const A = await anchorsFromRoom(room);
+  const nx = x / w, ny = y / h;
+  const fp = A.map(([px,py]) => {
+    const dx = nx - px, dy = ny - py;
+    return round6(dx*dx + dy*dy);
+  });
+  return `${name}|fp:${fp.map(v => v.toFixed(6)).join(",")}`;
+}
+
+// --- distances in fingerprint space ---
+function euclid(a,b){
+  let s=0;
+  for(let i=0;i<a.length;i++){ const d=a[i]-b[i]; s+=d*d; }
+  return Math.sqrt(s);
+}
+
+// Generate all perfect matchings (pairings) of 6 indices.
+// Returns array of matchings, where each matching is [[a,b],[c,d],[e,f]].
+function allPairings(indices){
+  if(indices.length === 0) return [[]];
+  const [first, ...rest] = indices;
+  const out = [];
+  for(let i=0;i<rest.length;i++){
+    const partner = rest[i];
+    const remaining = rest.filter((_,j)=>j!==i);
+    for(const sub of allPairings(remaining)){
+      out.push([[first, partner], ...sub]);
+    }
+  }
+  return out;
+}
+
+/*
+  Fair scoring for 2v2v2 (minimax-first):
+  1) Minimise the WORST teammate distance so no team gets sacrificed.
+  2) Minimise the WORST sandwich risk for any player.
+  3) Keep pair distances reasonably even (spread).
+  4) Slight preference for overall closeness (sum).
+*/
+function scorePairing(pairs, D){
+  // teamOf: index -> teamId (0,1,2)
+  const teamOf = new Map();
+  pairs.forEach((p, t) => { teamOf.set(p[0], t); teamOf.set(p[1], t); });
+
+  // Pair distances
+  const pairDists = pairs.map(([a,b]) => D[a][b]);
+  const maxPairDist = Math.max(...pairDists);
+  const sumPairDist = pairDists.reduce((s,x)=>s+x,0);
+
+  // Sandwich risk (worst-case)
+  let worstPlayerRisk = 0;
+
+  for(let i=0;i<D.length;i++){
+    const neigh = [];
+    for(let j=0;j<D.length;j++) if(i!==j) neigh.push([D[i][j], j]);
+    neigh.sort((p,q)=>p[0]-q[0]);
+
+    const n1 = neigh[0][1], n2 = neigh[1][1];
+    const t = teamOf.get(i);
+    const t1 = teamOf.get(n1), t2 = teamOf.get(n2);
+
+    const opp1 = (t1 !== t);
+    const opp2 = (t2 !== t);
+
+    let r = 0;
+    if(opp1 && opp2){
+      // both nearest are opponents; worst if they're the same enemy pair
+      r = (t1 === t2) ? 12 : 7;
+    } else if(opp1 || opp2){
+      r = 2;
+    }
+
+    // scale slightly by closeness (closer enemies = worse)
+    const d1 = neigh[0][0], d2 = neigh[1][0];
+    const proximityBoost = 1 / (0.6 + d1) + 1 / (0.6 + d2);
+    r = r * (1 + 0.15 * proximityBoost);
+
+    worstPlayerRisk = Math.max(worstPlayerRisk, r);
+  }
+
+  // Spread (balance the three pair distances)
+  const avg = sumPairDist / pairDists.length;
+  const spread = pairDists.reduce((s,x)=>s+Math.abs(x-avg),0);
+
+  // Recommended fairness-first weights
+  const score =
+    maxPairDist * 140 +
+    worstPlayerRisk * 60 +
+    spread * 6 +
+    sumPairDist * 1;
+
+  return score;
+}
+
+function bestTeams2v2v2(players){
+  const names = Object.keys(players);
+  const fps = names.map(n => players[n]);
+
+  // distance matrix
+  const D = fps.map((a,i)=>fps.map((b,j)=> i===j ? 0 : euclid(a,b)));
+
+  const idx = [0,1,2,3,4,5];
+  const pairings = allPairings(idx); // 15
+  let best = null;
+
+  for(const pairs of pairings){
+    const sc = scorePairing(pairs, D);
+    if(!best || sc < best.sc) best = { sc, pairs };
+  }
+
+  const labels = ["Team A", "Team B", "Team C"];
+  const teams = best.pairs.map((pair, i) => ({
+    label: labels[i],
+    players: pair.map(j => names[j])
+  }));
+
+  return { score: best.sc, teams };
+}
+
+// --- UI wiring ---
+const roomEl=document.getElementById("room");
+const wEl=document.getElementById("w");
+const hEl=document.getElementById("h");
+const nameEl=document.getElementById("name");
+const xEl=document.getElementById("x");
+const yEl=document.getElementById("y");
+const tokenEl=document.getElementById("token");
+const allEl=document.getElementById("all");
+const outEl=document.getElementById("out");
+
+document.getElementById("gen").addEventListener("click", async ()=>{
+  const room=roomEl.value.trim();
+  const name=nameEl.value.trim();
+  const w=Number(wEl.value), h=Number(hEl.value);
+  const x=Number(xEl.value), y=Number(yEl.value);
+  if(!room||!name||!Number.isFinite(x)||!Number.isFinite(y)||w<=0||h<=0){
+    tokenEl.value="Fill in Room Code, Name, X, Y, W, H.";
+    return;
+  }
+  const tok=await makeToken(room,name,x,y,w,h);
+  tokenEl.value=tok;
+});
+
+document.getElementById("compute").addEventListener("click", ()=>{
+  const lines=allEl.value.split("\n").map(s=>s.trim()).filter(Boolean);
+  if(lines.length!==6){
+    outEl.innerHTML=`<p class="small">Need exactly 6 tokens (currently ${lines.length}).</p>`;
+    return;
+  }
+  const players={};
+  for(const line of lines){
+    if(!line.includes("|fp:")){
+      outEl.innerHTML=`<p class="small">Bad token (missing |fp:): ${line}</p>`;
+      return;
+    }
+    const [name, rest]=line.split("|fp:");
+    const fp=rest.split(",").map(x=>Number(x.trim())).filter(x=>Number.isFinite(x));
+    if(fp.length!==8){
+      outEl.innerHTML=`<p class="small">Bad token for ${name.trim()}: expected 8 numbers.</p>`;
+      return;
+    }
+    players[name.trim()]=fp;
+  }
+
+  const res = bestTeams2v2v2(players);
+
+  outEl.innerHTML=`
+    <div class="card">
+      <h3>Teams (2v2v2, fairness-first)</h3>
+      ${res.teams.map(t => `
+        <div style="margin-top:10px"><strong>${t.label}</strong></div>
+        ${t.players.map(n=>`<span class="pill">${n}</span>`).join("")}
+      `).join("")}
+      <p class="small">Score: ${res.score.toFixed(2)} (lower is better)</p>
+      <details class="small">
+        <summary>What the score means</summary>
+        Fairness-first: strongly avoids any “disaster pair” by minimising the worst teammate distance.
+        Also discourages situations where a player’s two nearest neighbours are both opponents (especially the same enemy pair).
+        Then it lightly prefers overall closeness.
+      </details>
+    </div>
+  `;
+});
+</script>
+</body>
+</html>
