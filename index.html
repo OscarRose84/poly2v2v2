@@ -98,13 +98,12 @@
 
     <div class="card">
       <h2>Shared settings (must match organiser)</h2>
-      <input id="room" value="polytopia-room" placeholder="Room Code (change each match)"/>
       <div class="row">
         <input id="w" type="number" value="100" min="1" step="1" placeholder="Grid width (e.g. 100)"/>
         <input id="h" type="number" value="100" min="1" step="1" placeholder="Grid height (e.g. 100)"/>
       </div>
       <p class="small">
-        Everyone must use the same Room Code and W/H as the organiser page.
+        Everyone must use the same W/H as the organiser page.
       </p>
     </div>
 
@@ -130,6 +129,9 @@
 /* Token logic (unchanged) */
 const K = 8;
 const ORGANISER_EMAIL = "oseo@tcd.ie";
+
+/* ✅ Fixed room code (hidden from UI) */
+const ROOM_CODE = "polytopia-20feb";
 
 function sha256Hex(str){
   const enc = new TextEncoder().encode(str);
@@ -178,11 +180,11 @@ async function copyToClipboard(text){
   catch { return false; }
 }
 
-function openEmailDraft(room, w, h, token){
-  const subject = encodeURIComponent(`Polytopia token (${room})`);
+/* ✅ Room code removed from email subject/body */
+function openEmailDraft(w, h, token){
+  const subject = encodeURIComponent(`Polytopia token`);
   const body = encodeURIComponent(
-`Room: ${room}
-Grid: ${w}x${h}
+`Grid: ${w}x${h}
 
 Token:
 ${token}
@@ -191,7 +193,6 @@ ${token}
   window.location.href = `mailto:${ORGANISER_EMAIL}?subject=${subject}&body=${body}`;
 }
 
-const roomEl=document.getElementById("room");
 const wEl=document.getElementById("w");
 const hEl=document.getElementById("h");
 const nameEl=document.getElementById("name");
@@ -201,13 +202,13 @@ const tokenEl=document.getElementById("token");
 const statusEl=document.getElementById("status");
 
 document.getElementById("genSend").addEventListener("click", async ()=>{
-  const room=roomEl.value.trim();
+  const room = ROOM_CODE;
   const name=nameEl.value.trim();
   const w=Number(wEl.value), h=Number(hEl.value);
   const x=Number(xEl.value), y=Number(yEl.value);
 
   if(!room||!name||!Number.isFinite(x)||!Number.isFinite(y)||w<=0||h<=0){
-    statusEl.textContent = "Fill in Room Code, Name, X, Y, W, H.";
+    statusEl.textContent = "Fill in Name, X, Y, W, H.";
     tokenEl.value = "";
     return;
   }
@@ -220,7 +221,7 @@ document.getElementById("genSend").addEventListener("click", async ()=>{
     ? "Token copied. Opening email draft…"
     : "Couldn’t auto-copy (browser permissions). Copy the token manually. Opening email draft…";
 
-  openEmailDraft(room, w, h, tok);
+  openEmailDraft(w, h, tok);
 });
 </script>
 </body>
