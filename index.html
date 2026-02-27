@@ -15,7 +15,7 @@
 <body>
   <h1>Polytopia Token Generator</h1>
   <p class="small">
-    Generate your token from your coordinates. Send ONLY the token to the organiser.
+    Generate your token from your coordinates. When you click the button, it will copy the token and open an email draft to send it to the organiser.
   </p>
 
   <div class="card">
@@ -31,15 +31,15 @@
   </div>
 
   <div class="card">
-    <h2>Generate your token</h2>
+    <h2>Generate & send your token</h2>
     <input id="name" placeholder="Your name"/>
     <div class="row">
       <input id="x" type="number" step="1" placeholder="Spawn X"/>
       <input id="y" type="number" step="1" placeholder="Spawn Y"/>
     </div>
-    <button id="gen">Generate token</button>
+    <button id="genSend">Generate token & open email</button>
     <textarea id="token" rows="2" readonly placeholder="Your token will appear here..."></textarea>
-    <p class="small">Copy the token and send it to the organiser.</p>
+    <p class="small" id="status"></p>
   </div>
 
 <script>
@@ -51,6 +51,7 @@
 */
 
 const K = 8;
+const ORGANISER_EMAIL = "oseo@tcd.ie";
 
 // --- deterministic RNG from a string ---
 function sha256Hex(str){
@@ -95,6 +96,29 @@ async function makeToken(room, name, x, y, w, h){
   return `${name}|fp:${fp.map(v => v.toFixed(6)).join(",")}`;
 }
 
+async function copyToClipboard(text){
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    // fallback: select the textarea (user can copy manually)
+    return false;
+  }
+}
+
+function openEmailDraft(room, w, h, token){
+  const subject = encodeURIComponent(`Polytopia token (${room})`);
+  const body = encodeURIComponent(
+`Room: ${room}
+Grid: ${w}x${h}
+
+Token:
+${token}
+`
+  );
+  window.location.href = `mailto:${ORGANISER_EMAIL}?subject=${subject}&body=${body}`;
+}
+
 // --- UI wiring ---
 const roomEl=document.getElementById("room");
 const wEl=document.getElementById("w");
@@ -103,19 +127,29 @@ const nameEl=document.getElementById("name");
 const xEl=document.getElementById("x");
 const yEl=document.getElementById("y");
 const tokenEl=document.getElementById("token");
+const statusEl=document.getElementById("status");
 
-document.getElementById("gen").addEventListener("click", async ()=>{
+document.getElementById("genSend").addEventListener("click", async ()=>{
   const room=roomEl.value.trim();
   const name=nameEl.value.trim();
   const w=Number(wEl.value), h=Number(hEl.value);
   const x=Number(xEl.value), y=Number(yEl.value);
 
   if(!room||!name||!Number.isFinite(x)||!Number.isFinite(y)||w<=0||h<=0){
-    tokenEl.value="Fill in Room Code, Name, X, Y, W, H.";
+    statusEl.textContent = "Fill in Room Code, Name, X, Y, W, H.";
+    tokenEl.value = "";
     return;
   }
+
   const tok=await makeToken(room,name,x,y,w,h);
   tokenEl.value=tok;
+
+  const copied = await copyToClipboard(tok);
+  statusEl.textContent = copied
+    ? "Token copied to clipboard. Opening email draft…"
+    : "Couldn’t auto-copy (browser permissions). Token is shown—copy it manually. Opening email draft…";
+
+  openEmailDraft(room, w, h, tok);
 });
 </script>
 </body>
