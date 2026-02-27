@@ -20,6 +20,13 @@
       margin:0;
       background:var(--bg);
       color:var(--text);
+
+      /* ✅ Use banner.png as the full-page background */
+      background-image:url("banner.png");
+      background-size:cover;
+      background-position:center;
+      background-repeat:no-repeat;
+      background-attachment:fixed;
     }
     .wrap{
       max-width:900px;
@@ -86,8 +93,7 @@
   <div class="wrap">
 
     <div class="hero">
-      <!-- ✅ Put your custom image in the repo root named banner.png -->
-      <img src="banner.png" alt="Banner"/>
+      <!-- ✅ Banner image removed from top; banner.png is now the page background -->
       <div class="heroText">
         <h1>Polytopia Token Generator</h1>
         <p class="small">
@@ -121,7 +127,7 @@
     </div>
 
     <div class="footer">
-      Please stop asking me to change things, the ChatGPT chat I used to make this has become so laggy it's such a bitch to work with now.
+      Tip: If the page doesn’t update, try a hard refresh (<code>⌘⇧R</code>) or Private Window.
     </div>
 
   </div>
